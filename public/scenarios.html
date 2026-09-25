@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Payment scenarios</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; }
+    body { max-width: 1200px; margin: 0 auto; padding: 2rem 1rem; color: #17212b; background: #f5f7fa; }
+    h1 { margin: 0 0 .4rem; font-size: 1.7rem; }
+    p { margin: 0 0 1.5rem; color: #4b5563; }
+    .table-wrap { overflow-x: auto; background: white; border: 1px solid #d8dee7; border-radius: .6rem; }
+    table { width: 100%; border-collapse: collapse; min-width: 850px; }
+    th, td { padding: .85rem .7rem; text-align: left; vertical-align: top; border-bottom: 1px solid #e7ebf0; }
+    th { background: #edf2f7; font-size: .85rem; }
+    tbody tr:last-child td { border-bottom: 0; }
+    td:first-child { font-weight: 700; }
+    .status { display: inline-block; border-radius: 999px; padding: .2rem .55rem; background: #e7ebf0; white-space: nowrap; font-size: .85rem; }
+    .status.SUCCEEDED { color: #11623b; background: #d9f3e4; }
+    .status.FAILED, .status.ROLLED_BACK { color: #8f2828; background: #fde5e5; }
+    .status.QUEUED, .status.PROCESSING { color: #765100; background: #fff0c2; }
+    button { min-width: 7.5rem; padding: .5rem .7rem; border: 0; border-radius: .35rem; color: white; background: #174ea6; font: inherit; cursor: pointer; }
+    button:hover:not(:disabled) { background: #123d83; }
+    button:disabled { opacity: .6; cursor: wait; }
+    .toolbar { display: flex; align-items: center; gap: .8rem; margin-bottom: 1rem; }
+    #clear-all { background: #a52d2d; }
+    #clear-all:hover:not(:disabled) { background: #842222; }
+    #clear-notice { color: #4b5563; font-size: .9rem; }
+    .notice { display: block; margin-top: .4rem; color: #8f2828; font-size: .82rem; max-width: 14rem; }
+    .attempts { margin: 0; padding-left: 1.2rem; font-size: .85rem; }
+    .attempts li + li { margin-top: .3rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Synthetic payment scenarios</h1>
+    <p>Send each assignment transaction manually. Status checks start after one second; failed attempts can be retried up to three total attempts.</p>
+    <div class="toolbar">
+      <button id="clear-all" type="button">Clear all</button>
+      <span id="clear-notice" role="status"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">ID</th>
+            <th scope="col">Amount</th>
+            <th scope="col">Failure type</th>
+            <th scope="col">Status</th>
+            <th scope="col">Attempts</th>
+            <th scope="col">Latest error</th>
+            <th scope="col">Attempt log</th>
+            <th scope="col">Action</th>
+          </tr>
+        </thead>
+        <tbody id="scenarios"></tbody>
+      </table>
+    </div>
+    <noscript>This page needs JavaScript to send payments and check their status.</noscript>
+  </main>
+
+  <script>
+    'use strict';
+
+    const scenarios = [
+      { id: 'T001', amount: 12000, failureType: 'None' },
+      { id: 'T002', amount: 25000, failureType: 'Network' },
+      { id: 'T003', amount: 8000, failureType: 'None' },
+      { id: 'T004', amount: 45000, failureType: 'Timeout' },
+      { id: 'T005', amount: 13000, failureType: 'None' },
+      { id: 'T006', amount: 70000, failureType: 'Database' },
+      { id: 'T007', amount: 9000, failureType: 'None' },
+      { id: 'T008', amount: 31000, failureType: 'Network' },
+      { id: 'T009', amount: 15000, failureType: 'None' },
+      { id: 'T010', amount: 50000, failureType: 'Timeout' },
+      { id: 'T011', amount: 6000, failureType: 'None' },
+      { id: 'T012', amount: 80000, failureType: 'Database' },
+      { id: 'T013', amount: 11000, failureType: 'None' },
+      { id: 'T014', amount: 22000, failureType: 'None' },
+      { id: 'T015', amount: 40000, failureType: 'Network' }
+    ];
+
+    const tbody = document.getElementById('scenarios');
+    const clearButton = document.getElementById('clear-all');
+    const clearNotice = document.getElementById('clear-notice');
+    const rows = [];
+    let resetting = false;
+
+    function addCell(tr, text) {
+      const td = document.createElement('td');
+      td.textContent = text;
+      tr.append(td);
+      return td;
+    }
+
+    function makeRow(scenario) {
+      const tr = document.createElement('tr');
+      addCell(tr, scenario.id);
+      addCell(tr, `${scenario.amount.toLocaleString('en-US')} KZT`);
+      addCell(tr, scenario.failureType);
+      const statusCell = addCell(tr, '');
+      statusCell.setAttribute('aria-live', 'polite');
+      const countCell = addCell(tr, '');
+      const errorCell = addCell(tr, '');
+      const logCell = addCell(tr, '');
+      const actionCell = addCell(tr, '');
+      const button = document.createElement('button');
+      button.type = 'button';
+      const notice = document.createElement('span');
+      notice.className = 'notice';
+      notice.setAttribute('role', 'status');
+      actionCell.append(button, notice);
+
+      const row = { scenario, payment: null, busy: false, pollError: false, timer: null, notice: '', statusCell, countCell, errorCell, logCell, button, noticeElement: notice };
+      button.addEventListener('click', () => {
+        if (row.busy || resetting) return;
+        if (!row.payment) submit(row);
+        else if (row.payment.status === 'FAILED' && row.payment.attemptCount < 3) retry(row);
+        else if (row.pollError) checkStatus(row);
+      });
+      tbody.append(tr);
+      rows.push(row);
+      render(row);
+    }
+
+    function render(row) {
+      const payment = row.payment;
+      const status = payment?.status ?? 'Not sent';
+      const badge = document.createElement('span');
+      badge.className = 'status ' + (payment?.status ?? '');
+      badge.textContent = status;
+      row.statusCell.replaceChildren(badge);
+      row.countCell.textContent = payment ? `${payment.attemptCount} / 3` : '—';
+      row.errorCell.textContent = payment?.errorType ?? '—';
+
+      const attempts = payment?.attempts ?? [];
+      if (attempts.length === 0) {
+        row.logCell.textContent = '—';
+      } else {
+        const list = document.createElement('ol');
+        list.className = 'attempts';
+        for (const attempt of attempts) {
+          const item = document.createElement('li');
+          item.textContent = `${attempt.outcome}${attempt.errorType ? ` · ${attempt.errorType}` : ''} · ${new Date(attempt.createdAt).toLocaleString()}`;
+          list.append(item);
+        }
+        row.logCell.replaceChildren(list);
+      }
+
+      const canRetry = payment?.status === 'FAILED' && payment.attemptCount < 3;
+      const canCheck = row.pollError && payment && ['QUEUED', 'PROCESSING'].includes(payment.status);
+      row.button.hidden = Boolean(payment) && !canRetry && !canCheck;
+      row.button.textContent = row.busy ? 'Working…' : canRetry ? 'Retry' : canCheck ? 'Check status' : 'Send payment';
+      row.button.disabled = row.busy || resetting;
+      const limitReached = payment?.attemptCount >= 3 && ['FAILED', 'ROLLED_BACK'].includes(payment.status);
+      row.noticeElement.textContent = row.notice || (limitReached ? 'Retry limit reached (3 attempts).' : '');
+      clearButton.disabled = resetting || rows.some(item => item.busy);
+    }
+
+    async function api(method, path, body) {
+      const response = await fetch(path, {
+        method,
+        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        body: body ? JSON.stringify(body) : undefined
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        const error = new Error(data.error?.message ?? `HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+      return data;
+    }
+
+    function scheduleCheck(row) {
+      clearTimeout(row.timer);
+      if (['QUEUED', 'PROCESSING'].includes(row.payment?.status)) {
+        row.timer = setTimeout(() => checkStatus(row), 1000);
+      }
+    }
+
+    async function submit(row) {
+      row.busy = true;
+      row.notice = '';
+      render(row);
+      try {
+        row.payment = await api('POST', '/api/payments', row.scenario);
+        row.pollError = false;
+      } catch (error) {
+        if (error.status === 409) {
+          try {
+            const existing = await api('GET', `/api/payments/${encodeURIComponent(row.scenario.id)}`);
+            if (existing.amount !== row.scenario.amount || existing.failureType !== row.scenario.failureType) {
+              throw new Error('This ID already exists with different payment data.');
+            }
+            row.payment = existing;
+            row.pollError = false;
+          } catch (lookupError) {
+            row.notice = lookupError.message;
+          }
+        } else {
+          row.notice = error.message;
+        }
+      } finally {
+        row.busy = false;
+        render(row);
+        scheduleCheck(row);
+      }
+    }
+
+    async function retry(row) {
+      row.busy = true;
+      row.notice = '';
+      render(row);
+      try {
+        row.payment = await api('POST', `/api/payments/${encodeURIComponent(row.scenario.id)}/retry`);
+        row.pollError = false;
+      } catch (error) {
+        row.notice = error.message;
+      } finally {
+        row.busy = false;
+        render(row);
+        scheduleCheck(row);
+      }
+    }
+
+    async function checkStatus(row) {
+      clearTimeout(row.timer);
+      if (row.busy || resetting) return;
+      row.busy = true;
+      render(row);
+      try {
+        row.payment = await api('GET', `/api/payments/${encodeURIComponent(row.scenario.id)}`);
+        row.pollError = false;
+        row.notice = '';
+      } catch (error) {
+        row.pollError = true;
+        row.notice = `Status check failed: ${error.message}`;
+      } finally {
+        row.busy = false;
+        render(row);
+        if (!row.pollError) scheduleCheck(row);
+      }
+    }
+
+    async function clearAll() {
+      if (resetting || rows.some(row => row.busy)) return;
+      if (!window.confirm('Delete all payments, attempt logs, and pending payment jobs? This cannot be undone.')) return;
+
+      resetting = true;
+      clearNotice.textContent = 'Clearing…';
+      for (const row of rows) {
+        clearTimeout(row.timer);
+        row.timer = null;
+        render(row);
+      }
+
+      try {
+        const result = await api('DELETE', '/api/payments');
+        for (const row of rows) {
+          row.payment = null;
+          row.pollError = false;
+          row.notice = '';
+          render(row);
+        }
+        clearNotice.textContent = `Cleared ${result.paymentsDeleted} payments and ${result.attemptsDeleted} attempt logs.`;
+      } catch (error) {
+        clearNotice.textContent = `Clear failed: ${error.message}`;
+        for (const row of rows) scheduleCheck(row);
+      } finally {
+        resetting = false;
+        for (const row of rows) render(row);
+      }
+    }
+
+    scenarios.forEach(makeRow);
+    clearButton.addEventListener('click', clearAll);
+  </script>
+</body>
+</html>

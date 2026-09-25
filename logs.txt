@@ -1,0 +1,82 @@
+T001 submitted.
+T002 submitted.
+T003 submitted.
+T004 submitted.
+T005 submitted.
+T006 submitted.
+T007 submitted.
+T008 submitted.
+T009 submitted.
+T010 submitted.
+T011 submitted.
+T012 submitted.
+T013 submitted.
+T014 submitted.
+T015 submitted.
+
+T001: SUCCEEDED, 1 attempt(s), errorType=none
+  try 1: SUCCEEDED
+T002 failed with Network; requesting retry 1.
+
+T002: SUCCEEDED, 2 attempt(s), errorType=none
+  try 1: FAILED (Network)
+  try 2: SUCCEEDED
+
+T003: SUCCEEDED, 1 attempt(s), errorType=none
+  try 1: SUCCEEDED
+T004 failed with Timeout; requesting retry 1.
+T004 failed with Timeout; requesting retry 2.
+
+T004: SUCCEEDED, 3 attempt(s), errorType=none
+  try 1: FAILED (Timeout)
+  try 2: FAILED (Timeout)
+  try 3: SUCCEEDED
+
+T005: SUCCEEDED, 1 attempt(s), errorType=none
+  try 1: SUCCEEDED
+T006 failed with Database; requesting retry 1.
+T006 failed with Database; requesting retry 2.
+
+T006: ROLLED_BACK, 3 attempt(s), errorType=Database
+  try 1: FAILED (Database)
+  try 2: FAILED (Database)
+  try 3: FAILED (Database)
+
+T007: SUCCEEDED, 1 attempt(s), errorType=none
+  try 1: SUCCEEDED
+T008 failed with Network; requesting retry 1.
+
+T008: SUCCEEDED, 2 attempt(s), errorType=none
+  try 1: FAILED (Network)
+  try 2: SUCCEEDED
+
+T009: SUCCEEDED, 1 attempt(s), errorType=none
+  try 1: SUCCEEDED
+T010 failed with Timeout; requesting retry 1.
+T010 failed with Timeout; requesting retry 2.
+
+T010: SUCCEEDED, 3 attempt(s), errorType=none
+  try 1: FAILED (Timeout)
+  try 2: FAILED (Timeout)
+  try 3: SUCCEEDED
+
+T011: SUCCEEDED, 1 attempt(s), errorType=none
+  try 1: SUCCEEDED
+T012 failed with Database; requesting retry 1.
+T012 failed with Database; requesting retry 2.
+
+T012: ROLLED_BACK, 3 attempt(s), errorType=Database
+  try 1: FAILED (Database)
+  try 2: FAILED (Database)
+  try 3: FAILED (Database)
+
+T013: SUCCEEDED, 1 attempt(s), errorType=none
+  try 1: SUCCEEDED
+
+T014: SUCCEEDED, 1 attempt(s), errorType=none
+  try 1: SUCCEEDED
+T015 failed with Network; requesting retry 1.
+
+T015: SUCCEEDED, 2 attempt(s), errorType=none
+  try 1: FAILED (Network)
+  try 2: SUCCEEDED

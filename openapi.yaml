@@ -1,0 +1,164 @@
+openapi: 3.0.3
+info:
+  title: 'Synthetic Payment Retry API'
+  description: 'Educational API for asynchronous payment processing and caller-requested retries.'
+  version: 1.0.0
+servers:
+  -
+    url: 'http://localhost:8080'
+    description: 'Docker Compose development server'
+paths:
+  /api/payments:
+    post:
+      summary: 'Submit and queue a synthetic payment'
+      operationId: 044699b95ca38fe9bdcd74dfbb1c3880
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              required:
+                - id
+                - amount
+                - failureType
+              properties:
+                id:
+                  type: string
+                  example: T001
+                amount:
+                  type: integer
+                  example: 1200
+                  minimum: 1
+                failureType:
+                  type: string
+                  enum: [None, Network, Timeout, Database]
+              type: object
+      responses:
+        '202':
+          description: 'Payment attempt queued'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '409':
+          description: 'Payment ID already exists'
+        '422':
+          description: 'Invalid payment input'
+        '503':
+          description: 'Payment queue is unavailable'
+    delete:
+      summary: 'Clear all synthetic payments, attempt logs, and pending payment jobs'
+      operationId: 7e08191b8911f49269b80c12d4893ec9
+      responses:
+        '200':
+          description: 'Application payment data cleared'
+        '503':
+          description: 'Reset failed'
+  '/api/payments/{id}':
+    get:
+      summary: 'Retrieve payment status and attempt logs'
+      operationId: 74737b237731fead343bc5c732ac5055
+      parameters:
+        -
+          name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 'Payment status'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '404':
+          description: 'Payment not found'
+  '/api/payments/{id}/retry':
+    post:
+      summary: 'Queue the next attempt after a failed attempt'
+      operationId: 11dccb7c829b919bcc9714cece0dd5a1
+      parameters:
+        -
+          name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: 'Retry attempt queued'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '404':
+          description: 'Payment not found'
+        '409':
+          description: 'Payment is not eligible for retry'
+        '503':
+          description: 'Payment queue is unavailable'
+components:
+  schemas:
+    Payment:
+      properties:
+        id:
+          type: string
+          example: T001
+        amount:
+          type: integer
+          example: 1200
+        currency:
+          type: string
+          example: KZT
+        failureType:
+          type: string
+          enum:
+            - None
+            - Network
+            - Timeout
+            - Database
+        status:
+          type: string
+          enum:
+            - QUEUED
+            - PROCESSING
+            - FAILED
+            - SUCCEEDED
+            - ROLLED_BACK
+        attemptCount:
+          type: integer
+          example: 1
+        errorType:
+          type: string
+          example: Network
+          nullable: true
+        attempts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attempt'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      type: object
+    Attempt:
+      properties:
+        number:
+          type: integer
+          example: 1
+        outcome:
+          type: string
+          enum:
+            - FAILED
+            - SUCCEEDED
+        errorType:
+          type: string
+          example: Network
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      type: object

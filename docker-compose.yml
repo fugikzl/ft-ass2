@@ -1,0 +1,90 @@
+x-app-environment: &app_environment
+  APP_ENV: ${APP_ENV:-dev}
+  APP_DEBUG: ${APP_DEBUG:-1}
+  APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
+  DB_HOST: mysql
+  DB_PORT: ${DB_PORT:-3306}
+  DB_NAME: ${DB_NAME:-payments}
+  DB_USER: ${DB_USER:-payments}
+  DB_PASSWORD: ${DB_PASSWORD:-payments}
+  MESSENGER_TRANSPORT_DSN: ${MESSENGER_TRANSPORT_DSN:-redis://redis:6379/payments?auto_setup=true}
+
+services:
+  php-fpm:
+    build: .
+    command: ["sh", "-ec", "php bin/migrate.php && exec php-fpm"]
+    working_dir: /var/www/html
+    environment: *app_environment
+    volumes:
+      - .:/var/www/html
+      - php_vendor:/var/www/html/vendor
+      - doctrine_cache:/var/www/html/var/cache
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit((int)!@fsockopen('127.0.0.1', 9000));"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  worker:
+    build: .
+    command: ["php", "bin/worker.php"]
+    user: www-data
+    working_dir: /var/www/html
+    environment: *app_environment
+    volumes:
+      - .:/var/www/html
+      - php_vendor:/var/www/html/vendor
+      - doctrine_cache:/var/www/html/var/cache
+    depends_on:
+      php-fpm:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:stable-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - .:/var/www/html:ro
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      php-fpm:
+        condition: service_healthy
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-payments}
+      MYSQL_USER: ${DB_USER:-payments}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-payments}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  mysql_data:
+  php_vendor:
+  doctrine_cache:
